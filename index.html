@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Aishu – your personal assistant</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🪔</text></svg>">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;600;800&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#1b1030;--ink:#f6f1ff;--mute:#a99cc9;--lilac:#c9b6ff;--gold:#ffb347;--card:#271842;--line:#3a2763}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:radial-gradient(120% 80% at 50% 0%,#2c1a52 0%,var(--bg) 60%);color:var(--ink);font-family:"Bricolage Grotesque",system-ui,sans-serif;display:flex;flex-direction:column;align-items:center;padding:env(safe-area-inset-top,0) 16px env(safe-area-inset-bottom,0)}
+main{width:100%;max-width:640px;flex:1;display:flex;flex-direction:column;padding:28px 0 12px;min-height:0}
+h1{font-size:clamp(2.4rem,9vw,4rem);font-weight:800;letter-spacing:-.03em;margin:0;line-height:1}
+.sub{color:var(--mute);margin:.6rem 0 0}
+.stage{display:flex;flex-direction:column;align-items:center;gap:14px;margin:28px 0 20px}
+#orb{width:132px;height:132px;border-radius:50%;border:0;cursor:pointer;background:radial-gradient(circle at 35% 30%,#ffd9a0,var(--gold) 45%,#d9731f);box-shadow:0 0 0 0 rgba(255,179,71,.5);transition:transform .2s,filter .2s;filter:saturate(.45) brightness(.8)}
+#orb:focus-visible{outline:3px solid var(--lilac);outline-offset:6px}
+#orb.on{filter:none;animation:breathe 3s ease-in-out infinite}
+#orb.awake{transform:scale(1.12);animation:ring 1s ease-out infinite}
+#orb.talk{animation:ring .6s ease-out infinite}
+@keyframes breathe{50%{transform:scale(1.05)}}
+@keyframes ring{to{box-shadow:0 0 0 38px rgba(255,179,71,0)}}
+@media (prefers-reduced-motion:reduce){#orb,#orb.on,#orb.awake,#orb.talk{animation:none}}
+#status{min-height:1.5em;color:var(--lilac);font-weight:600}
+#log{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:10px;padding:4px 2px;min-height:120px}
+.m{max-width:85%;padding:10px 14px;border-radius:16px;line-height:1.45;white-space:pre-wrap}
+.me{align-self:flex-end;background:var(--line);border-bottom-right-radius:4px}
+.ai{align-self:flex-start;background:var(--card);border:1px solid var(--line);border-bottom-left-radius:4px}
+form{display:flex;gap:8px;margin-top:12px}
+input,select,button.b{font:inherit;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:12px;padding:11px 14px}
+input:focus-visible,select:focus-visible,button:focus-visible,summary:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+form input{flex:1;min-width:0}
+button.b{background:var(--gold);color:#2b1700;font-weight:600;border:0;cursor:pointer}
+details{margin:12px 0 4px;color:var(--mute)}
+summary{cursor:pointer;padding:6px 0}
+.set{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}
+.set .w{grid-column:1/-1}
+small{display:block;margin-top:8px;line-height:1.4}
+</style>
+</head>
+<body>
+<main>
+  <h1>Aishu</h1>
+  <p class="sub">Tap the lamp once, then say “Hey Aishu”.</p>
+  <div class="stage">
+    <button id="orb" aria-label="Start or stop listening"></button>
+    <div id="status" role="status" aria-live="polite">Asleep</div>
+  </div>
+  <div id="log" aria-live="polite"></div>
+  <form id="f"><input id="t" placeholder="Or type a command…" autocomplete="off"><button class="b">Send</button></form>
+  <details>
+    <summary>Settings</summary>
+    <div class="set">
+      <select id="lang" aria-label="Language"><option value="en-IN">English</option><option value="te-IN">తెలుగు (Telugu)</option></select>
+      <select id="prov" aria-label="AI provider"><option value="claude">Claude</option><option value="openai">ChatGPT</option><option value="gemini">Gemini</option></select>
+      <input id="model" aria-label="Model name" placeholder="Model">
+      <input id="key" type="password" aria-label="API key" placeholder="API key (optional)">
+      <input id="name" class="w" aria-label="Your name" placeholder="Your name (optional)">
+    </div>
+    <small>Without a key, Aishu handles time, date, jokes, timers, math, notes, searches and opening sites. With a key, she answers anything. The key is stored only in this browser.</small>
+  </details>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+const store={get:(k,d='')=>{try{return localStorage.getItem(k)??d}catch{return d}},set:(k,v)=>{try{localStorage.setItem(k,v)}catch{}}};
+const MODELS={claude:'claude-sonnet-5-5',openai:'gpt-4o-mini',gemini:'gemini-2.0-flash'};
+const WAKE={'en-IN':/\b(hey|hi|hello|ok|okay)[\s,]*(aishu|aishoo|ayshu|aisu|aeshu|aisha|ayesha|ashu|eshu|aishwarya)\b[\s,.!]*/i,'te-IN':/(హే|హాయ్|ఓకే)\s*(ఐషు|ఆయుషు|ఐసు|ఐష)[\s,.!]*|\b(hey|hi)[\s,]*(aishu|ayshu|aisu)\b[\s,.!]*/i};
+const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+let rec,listening=false,speaking=false,awakeUntil=0,hist=[],timers=[];
+['lang','prov','model','key','name'].forEach(id=>{const e=$(id);e.value=store.get('aishu_'+id,id==='model'?'':e.value);e.addEventListener('change',()=>store.set('aishu_'+id,e.value))});
+$('prov').addEventListener('change',()=>{$('model').value='';store.set('aishu_model','')});
+const L=()=>$('lang').value, te=()=>L()==='te-IN';
+const T=(en,tl)=>te()?tl:en;
+const who=()=>$('name').value.trim();
+
+function add(cls,txt){const d=document.createElement('div');d.className='m '+cls;d.textContent=txt;$('log').append(d);$('log').scrollTop=1e9}
+function status(s){$('status').textContent=s}
+function orb(){const o=$('orb');o.className=(listening?'on ':'')+(speaking?'talk ':(Date.now()<awakeUntil?'awake ':''))}
+
+function say(txt){
+  add('ai',txt);
+  if(!('speechSynthesis' in window))return;
+  speechSynthesis.cancel();
+  const u=new SpeechSynthesisUtterance(txt);u.lang=L();
+  const v=speechSynthesis.getVoices().find(v=>v.lang===L())||speechSynthesis.getVoices().find(v=>v.lang.startsWith(L().slice(0,2)));
+  if(v)u.voice=v;
+  u.onstart=()=>{speaking=true;try{rec&&rec.stop()}catch{}orb();status(T('Speaking…','మాట్లాడుతోంది…'))};
+  u.onend=u.onerror=()=>{speaking=false;orb();status(listening?T('Listening for “Hey Aishu”','వింటోంది'):T('Asleep','నిద్రలో'));if(listening)startRec()};
+  speechSynthesis.speak(u);
+}
+
+function startRec(){
+  if(!SR||!listening||speaking)return;
+  rec=new SR();rec.lang=L();rec.continuous=true;rec.interimResults=false;
+  rec.onresult=e=>{for(let i=e.resultIndex;i<e.results.length;i++)if(e.results[i].isFinal)hear(e.results[i][0].transcript.trim())};
+  rec.onend=()=>{if(listening&&!speaking)setTimeout(startRec,250)};
+  rec.onerror=e=>{if(e.error==='not-allowed'||e.error==='service-not-allowed'){listening=false;orb();status('Microphone blocked – allow it in the address bar')}};
+  try{rec.start()}catch{}
+}
+function toggle(){
+  if(!SR){status('Voice needs Chrome, Edge or Safari. You can still type.');return}
+  listening=!listening;
+  if(listening){speechSynthesis.getVoices();status(T('Listening for “Hey Aishu”','వింటోంది'));startRec()}
+  else{try{rec&&rec.stop()}catch{};awakeUntil=0;status(T('Asleep','నిద్రలో'))}
+  orb();
+}
+function hear(text){
+  if(!text)return;
+  const m=text.match(WAKE[L()]);
+  if(m){const rest=text.replace(WAKE[L()],'').trim();
+    if(rest){add('me',text);run(rest)}else{awakeUntil=Date.now()+9000;orb();say(T('Yes'+(who()?', '+who():'')+'?','చెప్పండి'+(who()?', '+who():'')))}
+    return}
+  if(Date.now()<awakeUntil){awakeUntil=0;add('me',text);run(text)}
+}
+
+const SITES={youtube:'https://youtube.com',google:'https://google.com',maps:'https://maps.google.com',github:'https://github.com',whatsapp:'https://web.whatsapp.com',gmail:'https://mail.google.com',instagram:'https://instagram.com'};
+function notes(){try{return JSON.parse(store.get('aishu_notes','[]'))}catch{return[]}}
+async function run(q){
+  awakeUntil=0;orb();
+  const s=q.toLowerCase().replace(/[?.!]+$/,'');let m;
+  if(/^(stop|sleep|go to sleep|bye|goodbye|ఆపు|సరే బై)/.test(s)){say(T('Okay, going quiet.','సరే.'));listening=false;orb();try{rec&&rec.stop()}catch{};return}
+  if(/\b(time|సమయం|టైమ్)\b/.test(s))return say(T('It is '+new Date().toLocaleTimeString([], {hour:'numeric',minute:'2-digit'}),'ఇప్పుడు '+new Date().toLocaleTimeString('te-IN',{hour:'numeric',minute:'2-digit'})));
+  if(/\b(date|today|day|తేదీ|ఈరోజు)\b/.test(s)&&!/play|search/.test(s))return say(new Date().toLocaleDateString(L(),{weekday:'long',day:'numeric',month:'long',year:'numeric'}));
+  if(/^(hi|hello|hey)\b/.test(s)||/^(నమస్తే|హలో)/.test(s))return say(T('Hello'+(who()?' '+who():'')+'! How can I help?','నమస్తే'+(who()?' '+who():'')+'! ఏం కావాలి?'));
+  if(/joke/.test(s)){const j=['Why do programmers prefer dark mode? Because light attracts bugs.','I would tell you a UDP joke, but you might not get it.','There are 10 kinds of people: those who understand binary and those who do not.'];return say(j[Math.floor(Math.random()*j.length)])}
+  if(m=s.match(/(?:set\s+)?(?:a\s+)?timer\s+(?:for\s+)?(\d+)\s*(second|sec|minute|min|hour)/)){const n=+m[1],ms=n*(/^h/.test(m[2])?3.6e6:/^m/.test(m[2])?6e4:1e3);timers.push(setTimeout(()=>say(T('Your timer is done.','టైమర్ అయిపోయింది.')),ms));return say(T('Timer set for '+n+' '+m[2]+(n>1?'s':'')+'.','టైమర్ సెట్ చేశాను.'))}
+  if(m=s.match(/^(?:note|remember|add note)\s+(?:that\s+)?(.+)/)){const n=notes();n.push(m[1]);store.set('aishu_notes',JSON.stringify(n));return say(T('Saved: '+m[1],'సేవ్ చేశాను: '+m[1]))}
+  if(/(read|show|what are)\s.*notes?/.test(s)){const n=notes();return say(n.length?n.map((x,i)=>(i+1)+'. '+x).join('. '):T('You have no notes yet.','నోట్స్ ఏమీ లేవు.'))}
+  if(/clear notes/.test(s)){store.set('aishu_notes','[]');return say(T('Notes cleared.','నోట్స్ తొలగించాను.'))}
+  if(m=s.match(/^(?:calculate|what is|what's|compute)?\s*([\d\s+\-*/().x×÷^%]+|[\d\s]+(?:plus|minus|times|multiplied by|divided by|into)[\d\s.plusminetvdbyo]+)$/)&&/\d\s*[a-z+\-*/x×÷^%]/.test(s)){
+    try{const ex=m[1].replace(/plus/g,'+').replace(/minus/g,'-').replace(/multiplied by|times|into|x|×/g,'*').replace(/divided by|÷/g,'/').replace(/\^/g,'**');
+      if(/^[\d\s+\-*/().%]+$/.test(ex)){const r=Function('"use strict";return('+ex+')')();if(isFinite(r))return say(T('That is '+r,'సమాధానం '+r))}}catch{}}
+  if(m=s.match(/^(?:play|పాట)\s+(.+)/)){window.open('https://www.youtube.com/results?search_query='+encodeURIComponent(m[1]),'_blank');return say(T('Searching YouTube for '+m[1],'YouTube లో వెతుకుతున్నాను'))}
+  if(m=s.match(/^(?:search|google|look up)\s+(?:for\s+)?(.+)/)){window.open('https://www.google.com/search?q='+encodeURIComponent(m[1]),'_blank');return say(T('Searching for '+m[1],'వెతుకుతున్నాను'))}
+  if(m=s.match(/^open\s+(\w+)/)){const u=SITES[m[1]];if(u){window.open(u,'_blank');return say(T('Opening '+m[1],m[1]+' తెరుస్తున్నాను'))}}
+  if(!$('key').value.trim())return say(T('I can do time, timers, notes, math, searches and opening sites. Add an API key in Settings and I can answer anything.','నేను సమయం, టైమర్, నోట్స్, సెర్చ్ చేయగలను. అన్నింటికీ జవాబివ్వాలంటే సెట్టింగ్స్ లో API key పెట్టండి.'));
+  status(T('Thinking…','ఆలోచిస్తున్నాను…'));
+  try{say(await ask(q))}catch(e){say(T('Sorry, the AI request failed: '+e.message,'క్షమించండి, AI అభ్యర్థన విఫలమైంది: '+e.message))}
+}
+async function ask(q){
+  const p=$('prov').value,k=$('key').value.trim(),mod=$('model').value.trim()||MODELS[p];
+  const sys='You are Aishu, a warm, concise personal voice assistant'+(who()?' for '+who():'')+'. Reply in '+(te()?'Telugu':'English')+' in at most 3 short sentences, plain text only, no markdown.';
+  hist.push({role:'user',text:q});hist=hist.slice(-8);
+  let out;
+  if(p==='claude'){
+    const r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'content-type':'application/json','x-api-key':k,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:mod,max_tokens:300,system:sys,messages:hist.map(h=>({role:h.role,content:h.text}))})});
+    const d=await r.json();if(!r.ok)throw new Error(d.error?.message||r.status);out=d.content.map(c=>c.text||'').join('');
+  }else if(p==='openai'){
+    const r=await fetch('https://api.openai.com/v1/chat/completions',{method:'POST',headers:{'content-type':'application/json',authorization:'Bearer '+k},body:JSON.stringify({model:mod,max_tokens:300,messages:[{role:'system',content:sys},...hist.map(h=>({role:h.role,content:h.text}))]})});
+    const d=await r.json();if(!r.ok)throw new Error(d.error?.message||r.status);out=d.choices[0].message.content;
+  }else{
+    const r=await fetch('https://generativelanguage.googleapis.com/v1beta/models/'+mod+':generateContent?key='+encodeURIComponent(k),{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({systemInstruction:{parts:[{text:sys}]},contents:hist.map(h=>({role:h.role==='user'?'user':'model',parts:[{text:h.text}]}))})});
+    const d=await r.json();if(!r.ok)throw new Error(d.error?.message||r.status);out=d.candidates[0].content.parts.map(x=>x.text||'').join('');
+  }
+  hist.push({role:'assistant',text:out});return out;
+}
+$('orb').onclick=toggle;
+$('f').onsubmit=e=>{e.preventDefault();const v=$('t').value.trim();if(!v)return;$('t').value='';add('me',v);run(v.replace(WAKE[L()],'')||v)};
+add('ai',T('Hi! Tap the lamp, then say “Hey Aishu” followed by what you need.','నమస్తే! దీపాన్ని నొక్కి, “Hey Aishu” అని చెప్పండి.'));
+</script>
+</body>
+</html>
